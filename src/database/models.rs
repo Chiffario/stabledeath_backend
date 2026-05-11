@@ -1,4 +1,4 @@
-use crate::types::{PointLineResponse, SinglePointResponse, ratio};
+use crate::types::{PointLineResponse, RatioRegressionResponse, SinglePointResponse, ratio};
 
 #[derive(Debug, sqlx::FromRow)]
 pub struct MeasurementEntry {
@@ -12,6 +12,13 @@ pub struct DailyEntry {
     pub date: i64,
     pub stable: i64,
     pub lazer: i64,
+}
+
+#[derive(Debug)]
+pub struct RatioRegression {
+    pub target_ratio: f64,
+    pub was_reached: bool,
+    pub estimated_timestamp: i64,
 }
 
 impl From<MeasurementEntry> for SinglePointResponse {
@@ -75,5 +82,15 @@ impl From<Vec<DailyEntry>> for PointLineResponse {
             response.ratio.push(ratio(entry.stable, entry.lazer));
         }
         response
+    }
+}
+
+impl From<RatioRegression> for RatioRegressionResponse {
+    fn from(value: RatioRegression) -> Self {
+        Self {
+            target_ratio: value.target_ratio,
+            was_reached: value.was_reached,
+            estimated_timestamp: value.estimated_timestamp,
+        }
     }
 }

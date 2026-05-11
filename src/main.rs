@@ -1,10 +1,10 @@
+#![forbid(clippy::unwrap_used)]
 use std::{env, sync::Arc, time::Duration};
 
 use axum::{Router, routing::get};
 use axum_prometheus::PrometheusMetricLayer;
-use rosu_v2::Osu;
 use rustls::crypto::{CryptoProvider, ring};
-use tokio::time::{Instant, Interval};
+use tokio::time::Instant;
 
 mod database;
 mod routes;
@@ -13,22 +13,39 @@ mod types;
 
 #[tokio::main]
 async fn main() {
-    CryptoProvider::install_default(ring::default_provider()).unwrap();
+    if let Err(error) = CryptoProvider::install_default(ring::default_provider()) {
+        eprintln!("Failed to install rustls crypto provider: {error:?}");
+        return;
+    }
+
     tracing_subscriber::fmt()
         .with_env_filter(tracing_subscriber::EnvFilter::new(format!(
             "{}=debug,tower_http=debug,axum::rejection=trace",
             env!("CARGO_CRATE_NAME")
         )))
         .init();
-    let server = server::Server::init().await.unwrap();
+
+    tracing::info!(
+        crate_name = env!("CARGO_CRATE_NAME"),
+        "Starting application"
+    );
+
+    let server = match server::Server::init().await {
+        Ok(server) => server,
+        Err(error) => {
+            tracing::error!(%error, "Server initialization failed");
+            return;
+        }
+    };
 
     let (layer, metric_handler) = PrometheusMetricLayer::pair();
+    tracing::debug!("Initialized Prometheus metrics layer");
 
     let server_state = Arc::new(tokio::sync::Mutex::new(server));
 
     let cloned_state = Arc::clone(&server_state);
     tokio::task::spawn(async move {
-        tracing::info!("Initializing cache update loop");
+        tracing::info!(interval_minutes = 5, "Initializing cache update loop");
         let mut interval = tokio::time::interval_at(
             Instant::now() + Duration::from_mins(5),
             Duration::from_mins(5),
@@ -38,11 +55,14 @@ async fn main() {
         loop {
             interval.tick().await;
 
-            cloned_state.lock().await.update_cache().await.unwrap();
-            tracing::info!("Updated cache");
+            tracing::debug!("Starting scheduled cache update");
+            if let Err(error) = cloned_state.lock().await.update_cache().await {
+                tracing::error!(%error, "Scheduled cache update failed");
+            }
         }
     });
 
+    tracing::debug!("Building HTTP router");
     let app = Router::new()
         .layer(layer)
         .nest("/api/bars", routes::bars::router())
@@ -51,9 +71,24 @@ async fn main() {
         .layer(tower_http::trace::TraceLayer::new_for_http())
         .with_state(server_state);
 
-    let addr = env::var("APP_ADDR").unwrap_or_else(|_| "0.0.0.0:6726".to_owned());
-    let listener = tokio::net::TcpListener::bind(&addr).await.unwrap();
+    let addr = match env::var("APP_ADDR") {
+        Ok(addr) => addr,
+        Err(error) => {
+            tracing::debug!(%error, "APP_ADDR not set, using default address");
+            "0.0.0.0:6726".to_owned()
+        }
+    };
+
+    let listener = match tokio::net::TcpListener::bind(&addr).await {
+        Ok(listener) => listener,
+        Err(error) => {
+            tracing::error!(%addr, %error, "Failed to bind HTTP listener");
+            return;
+        }
+    };
     tracing::info!(%addr, "Listening for HTTP requests");
 
-    axum::serve(listener, app).await.unwrap();
+    if let Err(error) = axum::serve(listener, app).await {
+        tracing::error!(%error, "HTTP server stopped with error");
+    }
 }

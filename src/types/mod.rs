@@ -1,7 +1,5 @@
-use chrono::{Local, NaiveTime, TimeDelta, Utc};
-use color_eyre::Result as EyreResult;
+use chrono::{TimeDelta, Utc};
 use serde::Serialize;
-use serde_json::Result;
 
 use crate::database::models::MeasurementEntry;
 
@@ -27,6 +25,13 @@ pub struct PointLineResponse {
     pub lazer: Vec<i64>,
     pub sum: Vec<i64>,
     pub ratio: Vec<f64>,
+}
+
+#[derive(Serialize, Clone, Debug)]
+pub struct RatioRegressionResponse {
+    pub target_ratio: f64,
+    pub was_reached: bool,
+    pub estimated_timestamp: i64,
 }
 
 pub fn to_response(value: MeasurementEntry) -> axum::Json<SinglePointResponse> {

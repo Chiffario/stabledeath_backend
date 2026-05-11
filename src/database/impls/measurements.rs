@@ -1,4 +1,4 @@
-use chrono::{DateTime, Days, NaiveDateTime, Utc};
+use chrono::{DateTime, Days, Utc};
 use color_eyre::eyre::{Result, bail};
 use sqlx::{Sqlite, query, query_as};
 
@@ -8,6 +8,7 @@ use crate::{
 };
 
 impl Database {
+    #[tracing::instrument(skip(self), fields(timestamp = entry.timestamp, stable = entry.stable, lazer = entry.lazer))]
     pub async fn insert_measurement(&mut self, entry: MeasurementEntry) -> Result<()> {
         let result = query!(
             r#"
@@ -22,20 +23,21 @@ VALUES ( ?1, ?2, ?3 )
         .await;
 
         let _ = match result {
-            Ok(_) => (),
-            Err(e) if e.as_database_error().unwrap().is_unique_violation() => (),
+            Ok(_) => tracing::info!("Inserted measurement"),
+            Err(e)
+                if e.as_database_error()
+                    .is_some_and(|error| error.is_unique_violation()) =>
+            {
+                tracing::debug!("Skipped duplicate measurement")
+            }
             Err(e) => bail!("Database error: {e}"),
         };
-        tracing::info!(
-            stable = entry.stable,
-            lazer = entry.lazer,
-            "Inserted measurement at {}",
-            entry.timestamp
-        );
         Ok(())
     }
 
+    #[tracing::instrument(skip(self))]
     pub async fn get_user_count_peak(&self) -> Result<MeasurementEntry> {
+        tracing::debug!("Fetching peak lazer user count measurement");
         let result = query_as!(
             MeasurementEntry,
             r#"
@@ -56,7 +58,9 @@ WHERE lazer = (SELECT MAX(lazer) FROM measurements)
         Ok(result)
     }
 
+    #[tracing::instrument(skip(self))]
     pub async fn get_user_ratio_peak(&self) -> Result<MeasurementEntry> {
+        tracing::debug!("Fetching peak lazer ratio measurement");
         let result = query_as!(
             MeasurementEntry,
             r#"
@@ -82,7 +86,9 @@ WHERE (CAST(lazer AS REAL) / (stable + lazer)) = (
         Ok(result)
     }
 
+    #[tracing::instrument(skip(self))]
     pub async fn get_user_highest_percentile_peak(&self) -> Result<MeasurementEntry> {
+        tracing::debug!("Fetching highest user count within peak ratio percentile");
         let max_percentage: f64 = sqlx::query_scalar::<Sqlite, f64>(
             r#"
             SELECT MAX(CAST(lazer AS REAL) / (stable + lazer))
@@ -93,7 +99,9 @@ WHERE (CAST(lazer AS REAL) / (stable + lazer)) = (
         .fetch_one(&*self)
         .await?;
 
-        let peak = sqlx::query_as::<_, _>(
+        tracing::debug!(max_percentage, "Found maximum lazer ratio");
+
+        let peak: MeasurementEntry = sqlx::query_as(
             r#"
             SELECT timestamp, stable, lazer
             FROM measurements
@@ -106,9 +114,18 @@ WHERE (CAST(lazer AS REAL) / (stable + lazer)) = (
         .fetch_one(&*self)
         .await?;
 
+        tracing::info!(
+            timestamp = peak.timestamp,
+            stable = peak.stable,
+            lazer = peak.lazer,
+            ratio = ratio(peak.stable, peak.lazer),
+            "Found percentile-adjusted lazer ratio peak"
+        );
+
         Ok(peak)
     }
 
+    #[tracing::instrument(skip(self), fields(start = %start, end = %end))]
     pub async fn get_history_range(
         &self,
         start: DateTime<Utc>,
@@ -116,6 +133,12 @@ WHERE (CAST(lazer AS REAL) / (stable + lazer)) = (
     ) -> Result<Vec<MeasurementEntry>> {
         let timestamp_start = start.timestamp();
         let timestamp_end = end.timestamp();
+        tracing::debug!(
+            timestamp_start,
+            timestamp_end,
+            "Fetching measurement history range"
+        );
+
         let result = query_as!(
             MeasurementEntry,
             r#"
@@ -137,10 +160,16 @@ ORDER BY timestamp ASC
         Ok(result)
     }
 
-    pub fn get_past_day(&self) -> impl Future<Output = Result<Vec<MeasurementEntry>>> {
-        self.get_history_range(
-            Utc::now().checked_sub_days(Days::new(1)).unwrap(),
-            Utc::now(),
-        )
+    pub async fn get_past_day(&self) -> Result<Vec<MeasurementEntry>> {
+        let now = Utc::now();
+        let Some(start) = now.checked_sub_days(Days::new(1)) else {
+            tracing::error!(
+                timestamp = now.timestamp(),
+                "Failed to calculate past-day start time"
+            );
+            bail!("Failed to calculate past-day start time");
+        };
+
+        self.get_history_range(start, now).await
     }
 }

@@ -19,12 +19,15 @@ pub struct Database {
 
 impl Database {
     pub async fn new(uri: &str) -> Result<Self> {
+        tracing::debug!("Opening SQLite connection pool");
         let pool = SqlitePoolOptions::new().connect(uri).await?;
+        tracing::info!("SQLite connection pool ready");
 
         Ok(Self { pool })
     }
 
     pub async fn acquire(&self) -> Result<PoolConnection<Sqlite>> {
+        tracing::trace!("Acquiring SQLite connection from pool");
         self.pool
             .acquire()
             .await
@@ -32,6 +35,7 @@ impl Database {
     }
 
     pub async fn begin(&self) -> Result<Transaction<'static, Sqlite>> {
+        tracing::trace!("Starting SQLite transaction");
         self.pool
             .begin()
             .await
