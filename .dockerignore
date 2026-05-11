@@ -1,0 +1,9 @@
+/target
+/.git
+/.github
+/.env
+/timeseries.db
+/output.*
+/expanded.*
+/tests/custom.rs
+/.vscode

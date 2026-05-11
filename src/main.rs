@@ -1,4 +1,4 @@
-use std::{sync::Arc, time::Duration};
+use std::{env, sync::Arc, time::Duration};
 
 use axum::{Router, routing::get};
 use axum_prometheus::PrometheusMetricLayer;
@@ -51,9 +51,9 @@ async fn main() {
         .layer(tower_http::trace::TraceLayer::new_for_http())
         .with_state(server_state);
 
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:6727")
-        .await
-        .unwrap();
+    let addr = env::var("APP_ADDR").unwrap_or_else(|_| "0.0.0.0:6726".to_owned());
+    let listener = tokio::net::TcpListener::bind(&addr).await.unwrap();
+    tracing::info!(%addr, "Listening for HTTP requests");
 
     axum::serve(listener, app).await.unwrap();
 }
