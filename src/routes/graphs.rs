@@ -1,9 +1,11 @@
 use axum::{
     Json, Router,
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::StatusCode,
     routing::get,
 };
+use chrono::DateTime;
+use serde::Deserialize;
 
 use crate::{
     server::ServerState,
@@ -20,15 +22,42 @@ pub async fn user_count_graph(State(state): State<ServerState>) -> Json<PointLin
     response
 }
 
-pub async fn history_user_graph(State(state): State<ServerState>) -> Json<PointLineResponse> {
-    let response: Json<PointLineResponse> =
-        state.lock().await.cache().historical_user_graph().into();
+#[derive(Deserialize)]
+pub struct HistoryQuery {
+    from: Option<i64>,
+    to: Option<i64>,
+}
+
+pub async fn history_user_graph(
+    State(state): State<ServerState>,
+    Query(query): Query<HistoryQuery>,
+) -> Result<Json<PointLineResponse>, StatusCode> {
+    let response: PointLineResponse;
+    match (query.from, query.to) {
+        (None, None) => {
+            response = state.lock().await.cache().historical_user_graph().into();
+        }
+        (None, Some(_)) | (Some(_), None) => return Err(StatusCode::BAD_REQUEST),
+        (Some(from), Some(to)) => {
+            response = state
+                .lock()
+                .await
+                .database()
+                .get_history_range(
+                    DateTime::from_timestamp(from, 0).ok_or(StatusCode::BAD_REQUEST)?,
+                    DateTime::from_timestamp(to, 0).ok_or(StatusCode::BAD_REQUEST)?,
+                )
+                .await
+                .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+                .into()
+        }
+    }
     tracing::info!(
-        points = response.0.timestamp.len(),
+        points = response.timestamp.len(),
         "Served history graph data"
     );
 
-    response
+    Ok(Json(response))
 }
 
 pub async fn ratio_estimate(
