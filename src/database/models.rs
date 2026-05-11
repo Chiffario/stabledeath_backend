@@ -17,9 +17,7 @@ pub struct DailyEntry {
 impl From<MeasurementEntry> for SinglePointResponse {
     fn from(value: MeasurementEntry) -> Self {
         Self {
-            timestamp: chrono::DateTime::from_timestamp_secs(value.timestamp)
-                .unwrap()
-                .into(),
+            timestamp: value.timestamp,
             stable: value.stable,
             lazer: value.lazer,
             ratio: ratio(value.stable, value.lazer),
@@ -31,7 +29,7 @@ impl From<MeasurementEntry> for SinglePointResponse {
 impl From<SinglePointResponse> for MeasurementEntry {
     fn from(value: SinglePointResponse) -> Self {
         Self {
-            timestamp: value.timestamp.timestamp(),
+            timestamp: value.timestamp,
             stable: value.stable,
             lazer: value.lazer,
         }
@@ -41,7 +39,7 @@ impl From<SinglePointResponse> for MeasurementEntry {
 impl From<Vec<MeasurementEntry>> for PointLineResponse {
     fn from(value: Vec<MeasurementEntry>) -> Self {
         let mut response = Self {
-            timestamps: Vec::with_capacity(value.len()),
+            timestamp: Vec::with_capacity(value.len()),
             stable: Vec::with_capacity(value.len()),
             lazer: Vec::with_capacity(value.len()),
             sum: Vec::with_capacity(value.len()),
@@ -49,11 +47,7 @@ impl From<Vec<MeasurementEntry>> for PointLineResponse {
         };
 
         for entry in value {
-            response.timestamps.push(
-                chrono::DateTime::from_timestamp_secs(entry.timestamp)
-                    .unwrap()
-                    .into(),
-            );
+            response.timestamp.push(entry.timestamp);
             response.stable.push(entry.stable);
             response.lazer.push(entry.lazer);
             response.sum.push(entry.stable + entry.lazer);
@@ -67,18 +61,14 @@ impl From<Vec<MeasurementEntry>> for PointLineResponse {
 impl From<Vec<DailyEntry>> for PointLineResponse {
     fn from(value: Vec<DailyEntry>) -> Self {
         let mut response = Self {
-            timestamps: Vec::with_capacity(value.len()),
+            timestamp: Vec::with_capacity(value.len()),
             stable: Vec::with_capacity(value.len()),
             lazer: Vec::with_capacity(value.len()),
             sum: Vec::with_capacity(value.len()),
             ratio: Vec::with_capacity(value.len()),
         };
         for entry in value {
-            response.timestamps.push(
-                chrono::DateTime::from_timestamp_secs(entry.date)
-                    .unwrap()
-                    .into(),
-            );
+            response.timestamp.push(entry.date);
             response.stable.push(entry.stable);
             response.lazer.push(entry.lazer);
             response.sum.push(entry.stable + entry.lazer);

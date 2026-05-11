@@ -14,7 +14,12 @@ mod types;
 #[tokio::main]
 async fn main() {
     CryptoProvider::install_default(ring::default_provider()).unwrap();
-    tracing_subscriber::fmt().init();
+    tracing_subscriber::fmt()
+        .with_env_filter(tracing_subscriber::EnvFilter::new(format!(
+            "{}=debug,tower_http=debug,axum::rejection=trace",
+            env!("CARGO_CRATE_NAME")
+        )))
+        .init();
     let server = server::Server::init().await.unwrap();
 
     let (layer, metric_handler) = PrometheusMetricLayer::pair();
@@ -39,13 +44,16 @@ async fn main() {
     });
 
     let app = Router::new()
+        .layer(layer)
         .nest("/api/bars", routes::bars::router())
         .nest("/api/graphs", routes::graphs::router())
         .route("/metrics", get(|| async move { metric_handler.render() }))
-        .layer(layer)
+        .layer(tower_http::trace::TraceLayer::new_for_http())
         .with_state(server_state);
 
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:6727").await.unwrap();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:6727")
+        .await
+        .unwrap();
 
     axum::serve(listener, app).await.unwrap();
 }

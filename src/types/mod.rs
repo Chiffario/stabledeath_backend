@@ -5,25 +5,24 @@ use serde_json::Result;
 
 use crate::database::models::MeasurementEntry;
 
+/// Calculate ratio between stable and lazer user counts
+pub fn ratio(stable: i64, lazer: i64) -> f64 {
+    let (stable, lazer) = (stable as f64, lazer as f64);
+    lazer / (stable + lazer)
+}
 /// Changelog API entry, simplified
 #[derive(Serialize, Debug, Clone)]
 pub struct SinglePointResponse {
-    pub timestamp: chrono::DateTime<Local>,
+    pub timestamp: i64,
     pub stable: i64,
     pub lazer: i64,
     pub sum: i64,
     pub ratio: f64,
 }
 
-/// Calculate ratio between stable and lazer user counts
-pub fn ratio(stable: i64, lazer: i64) -> f64 {
-    let (stable, lazer) = (stable as f64, lazer as f64);
-    lazer / (stable + lazer)
-}
-
 #[derive(Serialize, Clone, Debug)]
 pub struct PointLineResponse {
-    pub timestamps: Vec<chrono::DateTime<Local>>,
+    pub timestamp: Vec<i64>,
     pub stable: Vec<i64>,
     pub lazer: Vec<i64>,
     pub sum: Vec<i64>,

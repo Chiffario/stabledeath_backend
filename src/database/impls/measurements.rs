@@ -1,4 +1,4 @@
-use chrono::{Days, NaiveDateTime, Utc};
+use chrono::{DateTime, Days, NaiveDateTime, Utc};
 use color_eyre::eyre::{Result, bail};
 use sqlx::{Sqlite, query, query_as};
 
@@ -111,33 +111,36 @@ WHERE (CAST(lazer AS REAL) / (stable + lazer)) = (
 
     pub async fn get_history_range(
         &self,
-        start: NaiveDateTime,
-        end: NaiveDateTime,
+        start: DateTime<Utc>,
+        end: DateTime<Utc>,
     ) -> Result<Vec<MeasurementEntry>> {
+        let timestamp_start = start.timestamp();
+        let timestamp_end = end.timestamp();
         let result = query_as!(
             MeasurementEntry,
             r#"
 SELECT *
 FROM measurements
 WHERE timestamp >= ?1 AND timestamp < ?2
-ORDER BY timestamp DESC
+ORDER BY timestamp ASC
             "#,
-            start,
-            end
+            timestamp_start,
+            timestamp_end
         )
         .fetch_all(&*self)
         .await?;
 
+        tracing::info!(
+            len = result.len(),
+            "Fetched data between {start:?} and {end:?}"
+        );
         Ok(result)
     }
 
     pub fn get_past_day(&self) -> impl Future<Output = Result<Vec<MeasurementEntry>>> {
         self.get_history_range(
-            Utc::now()
-                .naive_local()
-                .checked_sub_days(Days::new(1))
-                .unwrap(),
-            Utc::now().naive_local(),
+            Utc::now().checked_sub_days(Days::new(1)).unwrap(),
+            Utc::now(),
         )
     }
 }

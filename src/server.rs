@@ -166,7 +166,7 @@ pub async fn fetch_changelog(osu: &Osu) -> Result<SinglePointResponse> {
         });
 
     let entries = SinglePointResponse {
-        timestamp: Local::now(),
+        timestamp: Local::now().timestamp(),
         stable,
         lazer,
         ratio: ratio(stable, lazer),
